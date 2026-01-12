@@ -230,7 +230,7 @@ fn binaryview_serializer<'a>(
     array: &'a BinaryViewArray,
     offset: usize,
     take: usize,
-) -> Box<dyn StreamingIterator<Item = [u8]> + 'a + Send + Sync> {
+) -> Box<dyn JsonSerializer<Item = [u8]> + 'a + Send + Sync> {
     let f = |x: Option<&[u8]>, buf: &mut Vec<u8>| {
         if let Some(x) = x {
             buf.push(b'"');

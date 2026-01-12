@@ -3235,7 +3235,7 @@ dependencies = [
 name = "polars-json"
 version = "0.52.0"
 dependencies = [
- "base64 0.22.1",
+ "base64",
  "chrono",
  "chrono-tz",
  "fallible-streaming-iterator",
