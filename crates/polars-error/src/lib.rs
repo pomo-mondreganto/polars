@@ -493,6 +493,9 @@ on startup."#.trim_start())
     (invalid_element_use) => {
         $crate::polars_err!(InvalidOperation: "`element` is not allowed in this context")
     };
+    (invalid_field_use) => {
+        $crate::polars_err!(InvalidOperation: "`field` is not allowed in this context")
+    };
     (assertion_error = $objects:expr, $detail:expr, $lhs:expr, $rhs:expr) => {
         $crate::polars_err!(
             AssertionError: "{} are different ({})\n[left]: {}\n[right]: {}",
@@ -509,6 +512,12 @@ on startup."#.trim_start())
             polars_err!(ComputeError:
                 "aggregation 'item' expected a single value, got none"
             )
+        } else if $n > 100 {
+            if $allow_empty {
+                polars_err!(ComputeError: "aggregation 'item' expected no or a single value, got 100+ values")
+            } else {
+                polars_err!(ComputeError: "aggregation 'item' expected a single value, got 100+ values")
+            }
         } else if $n > 1 {
             if $allow_empty {
                 polars_err!(ComputeError:

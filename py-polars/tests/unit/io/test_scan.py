@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import io
 import sys
+import zlib
 from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
 from math import ceil
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any
 
 import pytest
 
@@ -15,6 +16,8 @@ import polars as pl
 from polars.testing.asserts.frame import assert_frame_equal
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from polars._typing import SchemaDict
 
 
@@ -477,7 +480,7 @@ def test_scan_directory(
         tmp_path / "dir/data.bin",
     ]
 
-    for df, path in zip(dfs, paths):
+    for df, path in zip(dfs, paths, strict=True):
         path.parent.mkdir(exist_ok=True)
         write_func(df, path)
 
@@ -613,6 +616,7 @@ def test_scan_nonexistent_path(format: str) -> None:
     "streaming",
     [True, False],
 )
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows paths are different")
 def test_scan_include_file_paths(
     tmp_path: Path,
     scan_func: Callable[..., pl.LazyFrame],
@@ -1217,3 +1221,43 @@ def test_scan_with_schema_skips_schema_inference(
 
     q = scan_func(paths, schema=schema).head(0)
     assert_frame_equal(q.collect(engine="streaming"), pl.DataFrame(schema=schema))
+
+
+@pytest.fixture(scope="session")
+def corrupt_compressed_csv() -> bytes:
+    large_and_simple_csv = b"line_val\n" * 200_000
+    compressed_data = zlib.compress(large_and_simple_csv, level=0)
+
+    corruption_start_pos = round(len(compressed_data) * 0.9)
+    assert corruption_start_pos > 1_600_000
+    corruption_len = 500
+
+    # The idea is to corrupt the input to make sure the scan never fully
+    # decompresses the input.
+    corrupted_data = bytearray(compressed_data)
+    corrupted_data[corruption_start_pos : corruption_start_pos + corruption_len] = (
+        b"\00"
+    )
+    # ~1.6MB of valid zlib compressed CSV to read before the corrupted data
+    # appears.
+    return corrupted_data
+
+
+@pytest.mark.parametrize("schema", [{"line_val": pl.String}, None])
+def test_scan_csv_streaming_decompression(
+    corrupt_compressed_csv: bytes, schema: Any
+) -> None:
+    slice_count = 11
+
+    df = (
+        pl.scan_csv(io.BytesIO(corrupt_compressed_csv), schema=schema)
+        .slice(0, slice_count)
+        .collect(engine="streaming")
+    )
+
+    expected = pl.DataFrame(
+        [
+            pl.Series("line_val", ["line_val"] * slice_count, dtype=pl.String),
+        ]
+    )
+    assert_frame_equal(df, expected)
